@@ -1,0 +1,41 @@
+{
+  "manifest_version": 1,
+  "name": "MaiMai Selfie Plugin",
+  "version": "1.0.0",
+  "description": "根据聊天场景自动生成同一角色自拍图，并提供底图管理命令。",
+  "author": {
+    "name": "Codex"
+  },
+  "license": "MIT",
+  "host_application": {
+    "min_version": "0.7.0",
+    "max_version": "1.0.0"
+  },
+  "keywords": [
+    "selfie",
+    "image-generation",
+    "role-consistency",
+    "maibot"
+  ],
+  "categories": [
+    "Content Generation",
+    "Multimedia"
+  ],
+  "default_locale": "zh-CN",
+  "plugin_info": {
+    "is_built_in": false,
+    "plugin_type": "general",
+    "components": [
+      {
+        "type": "action",
+        "name": "selfie_auto_action",
+        "description": "在关键词触发时自动生成自拍图"
+      },
+      {
+        "type": "command",
+        "name": "selfie_base",
+        "description": "管理角色底图：set/show/clear"
+      }
+    ]
+  }
+}
