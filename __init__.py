@@ -4,7 +4,10 @@ from src.plugin_system import BasePlugin, ComponentInfo, register_plugin
 
 from .components.action_selfie import SelfieAutoAction
 from .components.command_base import SelfieBaseCommand
-from .config_schema import CONFIG_SCHEMA, CONFIG_SECTION_DESCRIPTIONS
+from . import config_schema as _config_schema
+
+CONFIG_SCHEMA = _config_schema.CONFIG_SCHEMA
+CONFIG_SECTION_DESCRIPTIONS = _config_schema.CONFIG_SECTION_DESCRIPTIONS
 
 
 @register_plugin
@@ -24,4 +27,4 @@ class MaimaiSelfiePlugin(BasePlugin):
         ]
 
 
-__all__ = ["MaimaiSelfiePlugin"]
+__all__ = ["MaimaiSelfiePlugin", "CONFIG_SCHEMA", "CONFIG_SECTION_DESCRIPTIONS"]
