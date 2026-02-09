@@ -11,6 +11,7 @@ except Exception:  # pragma: no cover
 
 from ..services.image_client import ImageClient
 from ..services.llm_client import LLMClient
+from ..services.rate_limiter import RateLimiter
 from ..services.storage import SelfieStorage
 
 LOGGER = get_logger("maimai_selfie_plugin.action")
@@ -66,13 +67,41 @@ class SelfieAutoAction(BaseAction):
             context = self._build_context_text()
             prompt_style = str(self.get_config("selfie.prompt_style", "写实"))
             disallow_nsfw = bool(self.get_config("safety.disallow_nsfw", True))
-
             llm_client = LLMClient(
                 provider=str(self.get_config("llm.llm_provider", "openai")),
                 api_base=str(self.get_config("llm.llm_api_base", "https://api.openai.com/v1")),
                 api_key=str(self.get_config("llm.llm_api_key", "")),
                 model=str(self.get_config("llm.llm_model", "gpt-4o-mini")),
             )
+            rate_limiter = None
+            window_hours = int(self.get_config("selfie.rate_limit_window_hours", 6) or 6)
+            max_images = int(self.get_config("selfie.rate_limit_max_images", 3) or 3)
+            if bool(self.get_config("selfie.rate_limit_enabled", True)):
+                scope = str(self.get_config("selfie.rate_limit_scope", "chat")).strip().lower()
+                scope_id = self._rate_limit_scope_id(scope)
+                rate_limiter = RateLimiter(storage.data_dir, scope_id)
+                limited, count = rate_limiter.check(window_hours, max_images, now_ts)
+                if limited:
+                    LOGGER.info(
+                        "selfie rate limit hit",
+                        scope=scope,
+                        scope_id=scope_id,
+                        window_hours=window_hours,
+                        max_images=max_images,
+                        current_count=count,
+                    )
+                    refusal_reason = f"{window_hours} 小时内已拍了太多张照片"
+                    refusal_text = await llm_client.generate_refusal_reply(context, refusal_reason)
+                    await send_api.text_to_stream(
+                        text=refusal_text,
+                        stream_id=self._stream_id(),
+                        typing=False,
+                        set_reply=bool(reply_message),
+                        reply_message=reply_message,
+                        storage_message=True,
+                    )
+                    return True, "限流触发，已拒绝生图"
+
             prompt_plan = await llm_client.generate_prompt_plan(context, prompt_style, disallow_nsfw)
 
             image_client = ImageClient(
@@ -97,6 +126,8 @@ class SelfieAutoAction(BaseAction):
             )
             if ok:
                 storage.set_last_trigger(owner_key, now_ts)
+                if rate_limiter is not None:
+                    rate_limiter.record(window_hours, now_ts)
                 return True, "自拍图已生成并发送"
             await self.send_text("图片生成成功但发送失败，请稍后重试。")
             return False, "图片发送失败"
@@ -155,6 +186,12 @@ class SelfieAutoAction(BaseAction):
         scope = str(self.get_config("selfie.base_image_scope", "chat")).strip().lower()
         scope = "user" if scope == "user" else "chat"
         return SelfieStorage.owner_key(scope=scope, chat_id=self._chat_id(), person_id=self._person_id())
+
+    def _rate_limit_scope_id(self, scope: str) -> str:
+        normalized = "user" if scope == "user" else "chat"
+        if normalized == "user":
+            return f"user_{self._person_id()}"
+        return f"chat_{self._chat_id()}"
 
     def _load_recent_messages(self) -> List[Any]:
         chat_id = self._chat_id()

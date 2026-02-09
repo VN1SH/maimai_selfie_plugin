@@ -46,6 +46,31 @@ CONFIG_SCHEMA = {
             max=3600,
             description="同作用域触发冷却秒数",
         ),
+        "rate_limit_enabled": ConfigField(
+            type=bool,
+            default=True,
+            description="是否启用滑动窗口限流",
+        ),
+        "rate_limit_window_hours": ConfigField(
+            type=int,
+            default=6,
+            min=1,
+            max=168,
+            description="限流时间窗口（小时）",
+        ),
+        "rate_limit_max_images": ConfigField(
+            type=int,
+            default=3,
+            min=1,
+            max=100,
+            description="窗口内最多发送图片数量",
+        ),
+        "rate_limit_scope": ConfigField(
+            type=str,
+            default="chat",
+            choices=["chat", "user"],
+            description="限流作用域：chat 或 user",
+        ),
         "prompt_style": ConfigField(
             type=str,
             default="写实",
