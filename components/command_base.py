@@ -4,10 +4,11 @@ from typing import Any, List, Optional, Tuple
 from src.plugin_system import BaseCommand
 
 try:
-    from src.plugin_system.apis import get_logger, message_api, person_api, send_api
+    from src.plugin_system.apis import get_logger, message_api, person_api
 except Exception:  # pragma: no cover
-    from src.plugin_system import get_logger, message_api, person_api, send_api
+    from src.plugin_system import get_logger, message_api, person_api
 
+from ..services.send_helper import send_image_base64
 from ..services.storage import SelfieStorage, find_image_base64_in_message
 
 LOGGER = get_logger("maimai_selfie_plugin.command")
@@ -19,8 +20,7 @@ class SelfieBaseCommand(BaseCommand):
     command_pattern = r"^/selfie_base(?:\s+(?P<action>set|show|clear))?\s*$"
 
     async def execute(self) -> Tuple[bool, Optional[str], bool]:
-        action = (self.matched_groups or {}).get("action") if hasattr(self, "matched_groups") else None
-        action = (action or "show").strip().lower()
+        action = self._resolve_action()
 
         try:
             if action == "set":
@@ -32,6 +32,26 @@ class SelfieBaseCommand(BaseCommand):
             LOGGER.error("selfie_base command failed", error=str(exc))
             await self.send_text("❌ 处理底图命令失败，请稍后再试。")
             return False, f"selfie_base 执行异常: {exc}", True
+
+    def _resolve_action(self) -> str:
+        action = (self.matched_groups or {}).get("action") if hasattr(self, "matched_groups") else None
+        action = str(action or "").strip().lower()
+        if action in {"set", "show", "clear"}:
+            return action
+
+        command_message = getattr(self, "command_message", None) or getattr(self, "action_message", None) or {}
+        text = ""
+        if isinstance(command_message, dict):
+            text = str(command_message.get("processed_plain_text", "") or command_message.get("raw_message", "") or "")
+        elif command_message is not None:
+            text = str(getattr(command_message, "processed_plain_text", "") or getattr(command_message, "raw_message", "") or "")
+
+        tokens = [t.strip().lower() for t in text.split() if t.strip()]
+        for token in tokens:
+            if token in {"set", "show", "clear"}:
+                return token
+
+        return "show"
 
     def _storage(self) -> SelfieStorage:
         plugin_dir = Path(__file__).resolve().parents[1]
@@ -65,12 +85,33 @@ class SelfieBaseCommand(BaseCommand):
 
     def _command_reply_to_id(self) -> str:
         command_message = getattr(self, "command_message", None) or getattr(self, "action_message", None) or {}
-        if not isinstance(command_message, dict):
+
+        def _extract_from_value(value: Any) -> str:
+            if not value:
+                return ""
+            if isinstance(value, dict):
+                for nested_key in ("message_id", "id", "msg_id"):
+                    nested = value.get(nested_key)
+                    if nested:
+                        return str(nested)
+                return ""
+            if hasattr(value, "message_id"):
+                nested = getattr(value, "message_id", "")
+                if nested:
+                    return str(nested)
+            return str(value)
+
+        if isinstance(command_message, dict):
+            for key in ("reply_to", "reply_message_id", "reply_message", "reply_message_id_str"):
+                extracted = _extract_from_value(command_message.get(key))
+                if extracted:
+                    return extracted
             return ""
+
         for key in ("reply_to", "reply_message_id", "reply_message", "reply_message_id_str"):
-            value = command_message.get(key)
-            if value:
-                return str(value)
+            extracted = _extract_from_value(getattr(command_message, key, None))
+            if extracted:
+                return extracted
         return ""
 
     def _load_recent_messages(self, limit: int = 50) -> List[Any]:
@@ -158,14 +199,13 @@ class SelfieBaseCommand(BaseCommand):
         if image_b64:
             recent = self._load_recent_messages(limit=10)
             reply_message = self._latest_message_for_reply(recent)
-            try:
-                await send_api.image_to_stream(
-                    image_base64=image_b64,
-                    stream_id=self._stream_id(),
-                    storage_message=True,
-                    set_reply=bool(reply_message),
-                    reply_message=reply_message,
-                )
-            except Exception as exc:
-                LOGGER.warning("show base image send failed", error=str(exc), owner_key=owner_key)
+            ok, reason = await send_image_base64(
+                stream_id=self._stream_id(),
+                image_b64=image_b64,
+                reply_message=reply_message,
+            )
+            if not ok:
+                LOGGER.error("show base image send failed", reason=reason, owner_key=owner_key)
+                await self.send_text(f"❌ 底图发送失败：{reason}")
+                return False, f"show 失败: {reason}", True
         return True, "show 成功", True
