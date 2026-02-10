@@ -1,14 +1,16 @@
 {
   "manifest_version": 1,
   "name": "MaiMai Selfie Plugin",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "根据聊天场景自动生成同一角色自拍图，并提供底图管理命令。",
   "author": {
     "name": "Codex"
   },
   "license": "MIT",
+  "entry": "plugin.py",
+  "plugin_class": "MaimaiSelfiePlugin",
   "host_application": {
-    "min_version": "0.7.0",
+    "min_version": "0.12.2",
     "max_version": "1.0.0"
   },
   "keywords": [
